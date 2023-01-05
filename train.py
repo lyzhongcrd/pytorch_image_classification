@@ -4,10 +4,6 @@ import argparse
 import pathlib
 import time
 
-try:
-    import apex
-except ImportError:
-    pass
 import numpy as np
 import torch
 import torch.nn as nn
@@ -40,6 +36,7 @@ from pytorch_image_classification.utils import (
     save_config,
     set_seed,
     setup_cudnn,
+    tensorboard
 )
 
 global_step = 0
@@ -111,6 +108,8 @@ def train(epoch, config, model, optimizer, scheduler, loss_func, train_loader,
     logger.info(f'Train {epoch} {global_step}')
 
     device = torch.device(config.device)
+    amp_condition = (config.device !='cpu') and (config.train.use_apex)
+    amp_scaler = torch.cuda.amp.GradScaler(enabled=amp_condition)
 
     model.train()
 
@@ -134,43 +133,39 @@ def train(epoch, config, model, optimizer, scheduler, loss_func, train_loader,
         targets = send_targets_to_device(config, targets, device)
 
         data_chunks, target_chunks = subdivide_batch(config, data, targets)
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         outputs = []
         losses = []
         for data_chunk, target_chunk in zip(data_chunks, target_chunks):
-            if config.augmentation.use_dual_cutout:
-                w = data_chunk.size(3) // 2
-                data1 = data_chunk[:, :, :, :w]
-                data2 = data_chunk[:, :, :, w:]
-                outputs1 = model(data1)
-                outputs2 = model(data2)
-                output_chunk = torch.cat(
-                    (outputs1.unsqueeze(1), outputs2.unsqueeze(1)), dim=1)
-            else:
-                output_chunk = model(data_chunk)
-            outputs.append(output_chunk)
+            with torch.autocast(device_type=config.device, dtype=torch.float16, enabled=amp_condition):
+                if config.augmentation.use_dual_cutout:
+                    w = data_chunk.size(3) // 2
+                    data1 = data_chunk[:, :, :, :w]
+                    data2 = data_chunk[:, :, :, w:]
+                    outputs1 = model(data1)
+                    outputs2 = model(data2)
+                    output_chunk = torch.cat(
+                        (outputs1.unsqueeze(1), outputs2.unsqueeze(1)), dim=1)     
+                else:
+                    output_chunk = model(data_chunk)
+                outputs.append(output_chunk)
 
-            loss = loss_func(output_chunk, target_chunk)
-            losses.append(loss)
-            if config.device != 'cpu' and config.train.use_apex:
-                with apex.amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
+                loss = loss_func(output_chunk, target_chunk)
+                losses.append(loss)
+            amp_scaler.scale(loss).backward()
         outputs = torch.cat(outputs)
+        
 
         if config.train.gradient_clip > 0:
-            if config.device != 'cpu' and config.train.use_apex:
-                torch.nn.utils.clip_grad_norm_(
-                    apex.amp.master_params(optimizer),
-                    config.train.gradient_clip)
-            else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(),
-                                               config.train.gradient_clip)
+            if amp_condition:
+                amp_scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(),
+                                        config.train.gradient_clip)
         if config.train.subdivision > 1:
             for param in model.parameters():
                 param.grad.data.div_(config.train.subdivision)
-        optimizer.step()
+        amp_scaler.step(optimizer)
+        amp_scaler.update()
 
         acc1, acc5 = compute_accuracy(config,
                                       outputs,
@@ -243,8 +238,8 @@ def train(epoch, config, model, optimizer, scheduler, loss_func, train_loader,
 
 
 def validate(epoch, config, model, loss_func, val_loader, logger,
-             tensorboard_writer):
-    logger.info(f'Val {epoch}')
+             tensorboard_writer, phase_name='Val'):
+    logger.info(f'{phase_name} {epoch}')
 
     device = torch.device(config.device)
 
@@ -363,6 +358,7 @@ def main():
     logger.info(get_env_info(config))
 
     train_loader, val_loader = create_dataloader(config, is_train=True)
+    test_loader = create_dataloader(config, is_train=False)
 
     model = create_model(config)
     macs, n_params = count_op(config, model)
@@ -370,9 +366,6 @@ def main():
     logger.info(f'#params: {n_params}')
 
     optimizer = create_optimizer(config, model)
-    if config.device != 'cpu' and config.train.use_apex:
-        model, optimizer = apex.amp.initialize(
-            model, optimizer, opt_level=config.train.precision)
     model = apply_data_parallel_wrapper(config, model)
 
     scheduler = create_scheduler(config,
@@ -409,6 +402,7 @@ def main():
     else:
         tensorboard_writer = DummyWriter()
         tensorboard_writer2 = DummyWriter()
+    tensorboard_writer3 = DummyWriter()
 
     train_loss, val_loss = create_loss(config)
 
@@ -440,6 +434,10 @@ def main():
                 'config': config.as_dict(),
             }
             checkpointer.save(f'checkpoint_{epoch:05d}', **checkpoint_config)
+            # validation on test set
+            validate(epoch, config, model, val_loss, test_loader, logger,
+                     tensorboard_writer3, phase_name='Test')
+
 
     tensorboard_writer.close()
     tensorboard_writer2.close()

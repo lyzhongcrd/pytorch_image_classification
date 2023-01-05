@@ -4,6 +4,7 @@ import random
 import numpy as np
 import torch
 import yacs.config
+# from contextlib import contextmanager
 
 
 def set_seed(config: yacs.config.CfgNode) -> None:
@@ -23,3 +24,12 @@ def save_config(config: yacs.config.CfgNode,
                 output_path: pathlib.Path) -> None:
     with open(output_path, 'w') as f:
         f.write(str(config))
+
+# @contextmanager
+# def autocast_context_warp(enabled):
+#     if enabled:
+#         with torch.autocast(device_type='cuda', dtype=torch.float16):
+#             yield
+#     else:
+#         yield
+

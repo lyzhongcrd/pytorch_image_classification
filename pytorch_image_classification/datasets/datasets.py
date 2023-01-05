@@ -34,26 +34,43 @@ def create_dataset(config: yacs.config.CfgNode,
             'MNIST',
             'FashionMNIST',
             'KMNIST',
+            'GTSRB'
     ]:
         module = getattr(torchvision.datasets, config.dataset.name)
         if is_train:
             if config.train.use_test_as_val:
                 train_transform = create_transform(config, is_train=True)
                 val_transform = create_transform(config, is_train=False)
-                train_dataset = module(config.dataset.dataset_dir,
-                                       train=is_train,
-                                       transform=train_transform,
-                                       download=True)
-                test_dataset = module(config.dataset.dataset_dir,
-                                      train=False,
-                                      transform=val_transform,
-                                      download=True)
+                if config.dataset.name != 'GTSRB':
+                    train_dataset = module(config.dataset.dataset_dir,
+                                        train=is_train,
+                                        transform=train_transform,
+                                        download=True)
+                    test_dataset = module(config.dataset.dataset_dir,
+                                        train=False,
+                                        transform=val_transform,
+                                        download=True)
+                else:
+                    train_dataset = module(config.dataset.dataset_dir,
+                                        split='train',
+                                        transform=train_transform,
+                                        download=True)
+                    test_dataset = module(config.dataset.dataset_dir,
+                                        split='test',
+                                        transform=val_transform,
+                                        download=True)
                 return train_dataset, test_dataset
             else:
-                dataset = module(config.dataset.dataset_dir,
-                                 train=is_train,
-                                 transform=None,
-                                 download=True)
+                if config.dataset.name != 'GTSRB':
+                    dataset = module(config.dataset.dataset_dir,
+                                    train=is_train,
+                                    transform=None,
+                                    download=True)
+                else:
+                    dataset = module(config.dataset.dataset_dir,
+                                    split='train', 
+                                    transform=None,
+                                    download=True)
                 val_ratio = config.train.val_ratio
                 assert val_ratio < 1
                 val_num = int(len(dataset) * val_ratio)
@@ -69,10 +86,16 @@ def create_dataset(config: yacs.config.CfgNode,
                 return train_dataset, val_dataset
         else:
             transform = create_transform(config, is_train=False)
-            dataset = module(config.dataset.dataset_dir,
-                             train=is_train,
-                             transform=transform,
-                             download=True)
+            if config.dataset.name != 'GTSRB':
+                dataset = module(config.dataset.dataset_dir,
+                                train=is_train,
+                                transform=transform,
+                                download=True)
+            else:
+                dataset = module(config.dataset.dataset_dir,
+                                split='test',
+                                transform=transform,
+                                download=True)
             return dataset
     elif config.dataset.name == 'ImageNet':
         dataset_dir = pathlib.Path(config.dataset.dataset_dir).expanduser()

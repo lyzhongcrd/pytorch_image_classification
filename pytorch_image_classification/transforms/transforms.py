@@ -57,13 +57,19 @@ class RandomHorizontalFlip:
         return self.transform(data)
 
 
-class Resize:
+class TTAResize:
     def __init__(self, config: yacs.config.CfgNode):
         self.transform = torchvision.transforms.Resize(config.tta.resize)
 
     def __call__(self, data: PIL.Image.Image) -> PIL.Image.Image:
         return self.transform(data)
+        
+class Resize:
+    def __init__(self, size):
+        self.transform = torchvision.transforms.Resize(size)
 
+    def __call__(self, data: PIL.Image.Image) -> PIL.Image.Image:
+        return self.transform(data)
 
 class ToTensor:
     def __call__(

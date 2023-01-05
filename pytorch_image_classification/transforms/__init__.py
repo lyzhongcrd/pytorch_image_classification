@@ -10,8 +10,9 @@ from .transforms import (
     RandomCrop,
     RandomHorizontalFlip,
     RandomResizeCrop,
-    Resize,
+    TTAResize,
     ToTensor,
+    Resize,
 )
 
 from .cutout import Cutout, DualCutout
@@ -29,6 +30,10 @@ def _get_dataset_stats(
         # RGB
         mean = np.array([0.5071, 0.4865, 0.4409])
         std = np.array([0.2673, 0.2564, 0.2762])
+    elif name == 'GTSRB':
+        # RGB
+        mean = np.array([0.3415, 0.3123, 0.3213])
+        std = np.array([0.2757, 0.2632, 0.2690])
     elif name == 'MNIST':
         mean = np.array([0.1307])
         std = np.array([0.3081])
@@ -59,8 +64,9 @@ def create_transform(config: yacs.config.CfgNode, is_train: bool) -> Callable:
 def create_cifar_transform(config: yacs.config.CfgNode,
                            is_train: bool) -> Callable:
     mean, std = _get_dataset_stats(config)
+    transforms = []
+
     if is_train:
-        transforms = []
         if config.augmentation.use_random_crop:
             transforms.append(RandomCrop(config))
         if config.augmentation.use_random_horizontal_flip:
@@ -81,7 +87,8 @@ def create_cifar_transform(config: yacs.config.CfgNode,
             Normalize(mean, std),
             ToTensor(),
         ]
-
+    if config.dataset.name == 'GTSRB':
+        transforms.insert(0, Resize((48, 48)))
     return torchvision.transforms.Compose(transforms)
 
 
@@ -110,7 +117,7 @@ def create_imagenet_transform(config: yacs.config.CfgNode,
     else:
         transforms = []
         if config.tta.use_resize:
-            transforms.append(Resize(config))
+            transforms.append(TTAResize(config))
         if config.tta.use_center_crop:
             transforms.append(CenterCrop(config))
         transforms += [

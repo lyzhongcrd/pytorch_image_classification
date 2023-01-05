@@ -6,7 +6,7 @@ config.device = 'cuda'
 # cuDNN
 config.cudnn = ConfigNode()
 config.cudnn.benchmark = True
-config.cudnn.deterministic = False
+config.cudnn.deterministic = True
 
 config.dataset = ConfigNode()
 config.dataset.name = 'CIFAR10'
@@ -96,7 +96,7 @@ config.train.use_apex = True
 # O1 = mixed precision
 # O2 = almost fp16
 # O3 = fp16
-config.train.precision = 'O0'
+config.train.precision = 'O1'
 config.train.batch_size = 128
 config.train.subdivision = 1
 # optimizer (options: sgd, adam, lars, adabound, adaboundw)
@@ -160,8 +160,8 @@ config.scheduler.T_mul = 1.
 config.train.dataloader = ConfigNode()
 config.train.dataloader.num_workers = 2
 config.train.dataloader.drop_last = True
-config.train.dataloader.pin_memory = False
-config.train.dataloader.non_blocking = False
+config.train.dataloader.pin_memory = True
+config.train.dataloader.non_blocking = True
 
 # validation data loader
 config.validation = ConfigNode()
@@ -169,8 +169,8 @@ config.validation.batch_size = 256
 config.validation.dataloader = ConfigNode()
 config.validation.dataloader.num_workers = 2
 config.validation.dataloader.drop_last = False
-config.validation.dataloader.pin_memory = False
-config.validation.dataloader.non_blocking = False
+config.validation.dataloader.pin_memory = True
+config.validation.dataloader.non_blocking = True
 
 # distributed
 config.train.distributed = False
@@ -239,7 +239,7 @@ config.test.batch_size = 256
 # test data loader
 config.test.dataloader = ConfigNode()
 config.test.dataloader.num_workers = 2
-config.test.dataloader.pin_memory = False
+config.test.dataloader.pin_memory = True
 
 
 def get_default_config():
